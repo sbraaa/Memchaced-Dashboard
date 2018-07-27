@@ -1,11 +1,4 @@
 <?php
-
-/**
-* Simple memchached dashboard
-* A dead simple single file Memchaced stats dashboard.
-* @version 0.1.1
-* @author Ohad Raz <admin@bainternet.info>
-*/
 class Simple_memchached_dashboard{
 	public $memcache = null;
 	public $list     = null;
@@ -14,9 +7,9 @@ class Simple_memchached_dashboard{
 	public $server   = '';
 	public $port     = '';
 	private $users   = array();
-	
-	
-	function __construct($server = '127.0.0.1',$port = '11211',$users  = array('admin' => 'admin')){
+
+
+	function __construct($server = '127.0.0.1',$port = '11211',$users  = array('admin' => 'nimda')){
 		session_start();
 		$this->users = $users;
 		$this->validate_login();
@@ -52,8 +45,8 @@ class Simple_memchached_dashboard{
 									<!-- Username -->
 									<label class="col-md-3 control-label"  for="username">Username</label>
 									<div class="col-xs-6 col-sm-6 col-md-6 col-lg-6">
-										<input type="text" id="username" name="username" placeholder="" class="input-xlarge">	
-									</div>								
+										<input type="text" id="username" name="username" placeholder="" class="input-xlarge">
+									</div>
 								</div>
 
 								<div class="form-group">
@@ -124,38 +117,51 @@ class Simple_memchached_dashboard{
 	}
 
 	function setup(){
-		$this->memcache = new Memcache();
-		$this->memcache->addServer("$this->server:$this->port");
+		$this->memcached = new Memcached();
+		$this->memcached->addServer($this->server,$this->port);
 		$list = array();
-		$allSlabs = $this->memcache->getExtendedStats('slabs');
-		$items = $this->memcache->getExtendedStats('items');
-		foreach($allSlabs as $server => $slabs) {
-			foreach($slabs AS $slabId => $slabMeta) {
-				if ('active_slabs' == $slabId || "total_malloced" == $slabId) continue;
-				$cdump = $this->memcache->getExtendedStats('cachedump',(int)$slabId);
-				foreach($cdump AS $server => $entries) {
-					if($entries) {
-						foreach($entries AS $eName => $eData) {
-							$value = $this->memcache->get($eName);
-							$type = gettype($value);
-							$value = $this->maybe_unserialize($value);
-							if (is_object($value)|| is_array($value)){
-								$value = is_object($value)? json_decode(json_encode($value), true): $value;
-								$value = '<pre class="alert alert-warning">'.print_r($this->array_map_deep( $value,array($this,'maybe_unserialize')),true).'</pre>';
-							}
-							$list[$eName] = array(
-								'key'   => $eName,
-								'value' => $value,
-								'type'  => $type
-							);
-						}
-					}
-				}
+
+
+		$allKeys = $this->memcached->getAllKeys();
+		//echo "<pre>"; var_dump($allKeys);
+		$this->memcached->getDelayed($allKeys);
+		$store = $this->memcached->fetchAll();
+		//echo "<pre>"; var_dump($store); exit();
+
+		foreach ($store as $dataKey) {
+			//echo "<pre>"; var_dump($dataKey); exit();
+			$itemKey = $dataKey['key'];
+			$itemValue = $dataKey['value'];
+			$type = gettype($itemValue);
+			$value = $this->maybe_unserialize($itemValue);
+			if (is_object($value)|| is_array($value)){
+				$value = is_object($value)? json_decode(json_encode($value), true): $value;
+				$value = '<pre class="alert alert-warning">'.print_r($this->array_map_deep( $value,array($this,'maybe_unserialize')),true).'</pre>';
 			}
+			$list[$itemKey] = array(
+				'key'   => $itemKey,
+				'value' => $value,
+				'type'  => $type
+			);
 		}
 		ksort($list);
 		$this->list = $list;
-		$this->status = $this->memcache->getStats();
+		$tmp_status = $this->memcached->getStats();
+		$this->status = $tmp_status[$this->server.":".$this->port];
+	}
+
+	function formatBytes($bytes, $precision = 2) {
+	    $units = array('B', 'KB', 'MB', 'GB', 'TB');
+
+	    $bytes = max($bytes, 0);
+	    $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
+	    $pow = min($pow, count($units) - 1);
+
+	    // Uncomment one of the following alternatives
+	    $bytes /= pow(1024, $pow);
+	    // $bytes /= (1 << (10 * $pow));
+
+	    return round($bytes, $precision) . ' ' . $units[$pow];
 	}
 
 	function array_map_deep($array, $callback) {
@@ -181,7 +187,7 @@ class Simple_memchached_dashboard{
 		if (!is_string($value)){
 			return false;
 		}
-	 
+
 		// Serialized false, return true. unserialize() returns false on an
 		// invalid string or it could return false if the string is serialized
 		// false, eliminate that possibility.
@@ -189,10 +195,10 @@ class Simple_memchached_dashboard{
 			$result = false;
 			return true;
 		}
-	 
+
 		$length	= strlen($value);
 		$end	= '';
-	 	
+
 	 	if (!isset($value[0])) return false;
 		switch ($value[0]){
 			case 's':
@@ -210,7 +216,7 @@ class Simple_memchached_dashboard{
 	 			if ($value[1] !== ':'){
 					return false;
 				}
-	 
+
 				switch ($value[2]){
 					case 0:
 					case 1:
@@ -223,7 +229,7 @@ class Simple_memchached_dashboard{
 					case 8:
 					case 9:
 					break;
-	 
+
 					default:
 						return false;
 				}
@@ -233,11 +239,11 @@ class Simple_memchached_dashboard{
 					return false;
 				}
 			break;
-	 
+
 			default:
 				return false;
 		}
-	 
+
 		if (($result = @unserialize($value)) === false){
 			$result = null;
 			return false;
@@ -257,7 +263,7 @@ class Simple_memchached_dashboard{
 					<div id="hit_miss_cart" style="height: 250px;"></div>
 				</div>
 			</div>
-			
+
 			<script type="text/javascript">
 			jQuery(document).ready(function(){
 				Morris.Donut({
@@ -287,10 +293,18 @@ class Simple_memchached_dashboard{
 					<h3 class="panel-title">Memory</h3>
 				</div>
 				<div class="panel-body">
-					<div id="memory_cart" style="height: 250px;"></div>
+					<div id="memory_cart" style="height: 235px;"></div>
 				</div>
 			</div>
 			    <script type="text/javascript">
+
+				function MbytesToSize(bytes) {
+					if (parseInt(Math.floor(bytes)) > 0) return bytes+' MB';
+					if (parseInt(Math.floor(bytes*10)) >0 || parseInt(Math.floor(bytes*100))  > 0) return bytes+' KB';
+					if (parseInt(Math.floor(bytes*1000)) > 0) return (bytes * 1000)+' Bytes';
+					return bytes;
+				}
+
 			    jQuery(document).ready(function(){
 					Morris.Bar({
 						element: 'memory_cart',
@@ -313,7 +327,10 @@ class Simple_memchached_dashboard{
 						},
 						barRatio: 0.4,
 						xLabelAngle: 35,
-						hideHover: 'auto'
+						hideHover: 'auto',
+						hoverCallback: function (index, options, content, row) {
+							return "<div class='morris-hover-row-label'>total</div><div class='morris-hover-point' style='color: #000'>"+MbytesToSize(row['v'])+"</div>";
+						}
 					});
 				});
 			    </script>
@@ -329,26 +346,32 @@ class Simple_memchached_dashboard{
 	function dashboard(){
 		//delete
 		if (isset($_GET['del'])) {
-			$this->memcache->delete($_GET['del']);
+			$this->memcached->delete($_GET['del']);
 			header("Location: " . $_SERVER['PHP_SELF']);
 		}
 		//flush
 		if (isset($_GET['flush'])) {
-			$this->memcache->flush();
+			$this->memcached->flush();
 			header("Location: " . $_SERVER['PHP_SELF']);
 		}
 		//set
 		if (isset($_GET['set'])) {
-			$this->memcache->set($_GET['set'], $_GET['value']);
+			$this->memcached->set($_GET['set'], $_GET['value']);
 			header("Location: " . $_SERVER['PHP_SELF']);
 		}
 
 		//header
 		$this->header();
+
+		?><div class="row" style="margin-top: 60px;"><?php
+
 		//server info
 		$this->print_server_info();
 		//charts
 		$this->print_charts();
+
+		?></div><?php
+
 		//stored data
 		$this->stored_data_table();
 		//footer
@@ -388,7 +411,15 @@ class Simple_memchached_dashboard{
 							<?php foreach($this->list as $i): ?>
 								<tr>
 									<td class="one_t"><span class="key_scroll"><?= $i['key'] ?></span></td>
-									<td class="one_h"><?= $i['value'] ?></td>
+									<td class="one_h"><?php
+										if ($i['type'] != 'array' && $i['type'] != 'object') {
+											echo $i['value'] ;
+										} else {
+											echo '<button data-toggle="collapse" data-target="#div_'.$i['key'].'" id="bk_'.$i['key'].'" class="coll_expand_value">expand</button>
+											<div id="div_'.$i['key'].'" class="collapse">'.$i['value'].'</div>';
+										}
+
+									?></td>
 									<td><?= $i['type'] ?></td>
 									<td><a class="btn btn-danger" onclick="deleteKey('<?= $i['key'] ?>')" href="#">X</a>
 								</tr>
@@ -402,60 +433,51 @@ class Simple_memchached_dashboard{
 	}
 
 	function print_charts(){
-		?>
-		<a name="charts">&nbsp;</a>
-		<div class="row top20">
-			<?php 
+
 			$this->print_hit_miss_widget();
 			$this->print_memory_widget();
-			?>
-		</div>
-		<?php
 	}
 
-	function print_server_info(){ 
+	function print_server_info(){
 		$status = $this->status;
+		//$this->print_status_dump_widget();
 		?>
-		<a name="info"></a>
-		<div class="panel panel-default top20">
-			<div class="panel-heading">
-				<h3 class="panel-title">Server Info</h3>
+		<div class="col-xs-12 col-sm-6 col-md-6 col-lg-6">
+			<div class="panel panel-default">
+				<div class="panel-heading">
+					<h3 class="panel-title">Server Info</h3>
+				</div>
+				<div class="panel-body">
+				<?php
+					echo "<table class='table'>";
+					echo "<tr><td>Memcache version</td><td> ".$status ["version"]."</td></tr>";
+					echo "<tr><td>Process id (pid)</td><td>".$status ["pid"]."</td></tr>";
+					echo "<tr><td>Server Uptime </td><td>".gmdate("H:i:s", $status["uptime"])."</td></tr>";
+					echo "<tr><td>Number of keys since start</td><td>".$status ["total_items"]."</td></tr>";
+					echo "<tr><td>Active connections </td><td>".$status ["curr_connections"]."</td></tr>";
+					echo "<tr><td>Connections since start</td><td>".$status ["total_connections"]."</td></tr>";
+					echo "<tr><td>Retrieval requests </td><td>".$status ["cmd_get"]."</td></tr>";
+					echo "<tr><td>Storage requests </td><td>".$status ["cmd_set"]."</td></tr>";
+
+					if ((real)$status ["cmd_get"] != 0)
+						$percCacheHit=((real)$status ["get_hits"]/ (real)$status ["cmd_get"] *100);
+					else
+						$percCacheHit=0;
+					$percCacheHit=round($percCacheHit,3);
+					$percCacheMiss=100-$percCacheHit;
+
+					echo "<tr><td>Hit requested keys</td><td>".$status ["get_hits"]." ($percCacheHit%)</td></tr>";
+					echo "<tr><td>Missed requested keys</td><td>".$status ["get_misses"]." ($percCacheMiss%)</td></tr>";
+					echo "<tr><td>Bytes read</td><td>".$this->formatBytes($status['bytes_read'])."</td></tr>";
+					echo "<tr><td>Bytes sent</td><td>".$this->formatBytes($status['bytes_written'])."</td></tr>";
+					echo "<tr><td>Used memory</td><td>".$this->formatBytes($status['bytes'])."</td></tr>";
+					echo "<tr><td>Total memory</td><td>".$this->formatBytes($status["limit_maxbytes"])."</td></tr>";
+					echo "<tr><td>Removed keys (to free space)</td><td>".$status ["evictions"]."</td></tr>";
+					echo "</table>";
+				?>
+				</div>
 			</div>
-			<div class="panel-body">
-			<?php
-				echo "<table class='table'>"; 
-				echo "<tr><td>Memcache Server version:</td><td> ".$status ["version"]."</td></tr>"; 
-				echo "<tr><td>Process id of this server process </td><td>".$status ["pid"]."</td></tr>"; 
-				echo "<tr><td>Server Uptime </td><td>".gmdate("H:i:s", $status["uptime"])."</td></tr>"; 
-				echo "<tr><td>Total number of items stored by this server ever since it started </td><td>".$status ["total_items"]."</td></tr>"; 
-				echo "<tr><td>Number of open connections </td><td>".$status ["curr_connections"]."</td></tr>"; 
-				echo "<tr><td>Total number of connections opened since the server started running </td><td>".$status ["total_connections"]."</td></tr>"; 
-				echo "<tr><td>Number of connection structures allocated by the server </td><td>".$status ["connection_structures"]."</td></tr>"; 
-				echo "<tr><td>Cumulative number of retrieval requests </td><td>".$status ["cmd_get"]."</td></tr>"; 
-				echo "<tr><td> Cumulative number of storage requests </td><td>".$status ["cmd_set"]."</td></tr>"; 
-
-				if ((real)$status ["cmd_get"] != 0)
-					$percCacheHit=((real)$status ["get_hits"]/ (real)$status ["cmd_get"] *100);
-				else
-					$percCacheHit=0;
-				$percCacheHit=round($percCacheHit,3); 
-				$percCacheMiss=100-$percCacheHit; 
-
-				echo "<tr><td>Number of keys that have been requested and found present </td><td>".$status ["get_hits"]." ($percCacheHit%)</td></tr>"; 
-				echo "<tr><td>Number of items that have been requested and not found </td><td>".$status ["get_misses"]."($percCacheMiss%)</td></tr>"; 
-
-				$MBRead= (real)$status["bytes_read"]/(1024*1024); 
-				echo "<tr><td>Total number of bytes read by this server from network </td><td>".$MBRead." Mega Bytes</td></tr>"; 
-				$MBWrite=(real) $status["bytes_written"]/(1024*1024) ; 
-				echo "<tr><td>Total number of bytes sent by this server to network </td><td>".$MBWrite." Mega Bytes</td></tr>";
-				$MBSize=(real) $status["limit_maxbytes"]/(1024*1024) ; 
-				echo "<tr><td>Current number of bytes used.</td><td>".$status['bytes']."</td></tr>"; 
-				echo "<tr><td>Number of bytes this server is allowed to use for storage.</td><td>".$MBSize." Mega Bytes</td></tr>"; 
-				echo "<tr><td>Number of valid items removed from cache to free memory for new items.</td><td>".$status ["evictions"]."</td></tr>"; 
-				echo "</table>";
-			?>
-			</div>
-		</div>	
+		</div>
 		<?php
 	}
 
@@ -467,18 +489,25 @@ class Simple_memchached_dashboard{
 			<meta http-equiv="X-UA-Compatible" content="IE=edge">
 			<meta name="viewport" content="width=device-width, initial-scale=1">
 			<link href="//cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.2.0/css/bootstrap.min.css" rel="stylesheet">
-			<link rel="stylesheet" href="http://cdn.oesmith.co.uk/morris-0.5.1.css">
+			<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/morris.js/0.5.1/morris.css">
 			<link rel="stylesheet" href="//cdn.datatables.net/plug-ins/a5734b29083/integration/bootstrap/3/dataTables.bootstrap.css">
 			<link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/alertify.js/0.3.11/alertify.core.min.css">
 			<link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/alertify.js/0.3.11/alertify.default.min.css">
 			<link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/alertify.js/0.3.11/alertify.bootstrap.min.css">
+			<link rel="stylesheet" href="//stackpath.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css">
 			<script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.0/jquery.min.js"></script>
 			<style type="text/css">
 			pre {overflow: auto;width: 100%;}
-			.key_scroll{overflow: auto;width: 50%;word-wrap: break-word;margin: 0;float: left;}
+			.key_scroll{overflow: auto;width: 100%;word-wrap: break-word; word-break: break-all;margin: 0;float: left;}
 			.one_t{width: 30%;}
-			.one_h{width: 50%;}
+			.one_h{width: 50%; word-break: break-all;}
 			.top20{margin-top: 30px;}
+			.navbar-default { background-color: #428bca;}
+			.navbar-default .navbar-brand { color: #FFF;; }
+			.navbar-default .navbar-text { color: #FFF; }
+			.navbar-default .navbar-nav>li>a { color: #FFF; }
+			.table>thead>tr>th, .table>tbody>tr>th, .table>tfoot>tr>th, .table>thead>tr>td, .table>tbody>tr>td, .table>tfoot>tr>td { border-top: 0; border-bottom: 1px solid #ddd; }
+
 			</style>
 		</head>
 		<body>
@@ -494,8 +523,8 @@ class Simple_memchached_dashboard{
 					</button>
 					<a class="navbar-brand" href="<?= $_SERVER['PHP_SELF'] ?>">Memcached Dashboard</a>
 				</div>
-			<?php 
-			if ($this->server != ''){	
+			<?php
+			if ($this->server != ''){
 				?><p class="navbar-text">Server IP: <?= $this->server ?> Port: <?= $this->port ?></p><?php
 			}
 			if ($this->is_logged_in()){
@@ -503,20 +532,15 @@ class Simple_memchached_dashboard{
 				<!-- Collect the nav links, forms, and other content for toggling -->
 				<div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
 					<ul class="nav navbar-nav navbar-right">
-						<li class="dropdown">
-							<a href="#" class="dropdown-toggle" data-toggle="dropdown">Menu <span class="caret"></span></a>
-							<ul class="dropdown-menu" role="menu">
-								<li><a href="#">Server Info</a></li>
-								<li><a href="#charts">Charts</a></li>
-								<li><a href="#stored_data">Stored Data</a></li>
-								<li class="divider"></li>
-								<li><a href="<?= $_SERVER['PHP_SELF']; ?>?action=logout">logout</a></li>
-							</ul>
-						</li>
+
+						<li><a href="#" title="Server Info"><i class="fa fa-server fa-lg" aria-hidden="true"></i></a></li>
+						<li><a href="#stored_data" title="Keys Info"><i class="fa fa-database fa-lg" aria-hidden="true"></i></a></li>
+						<li><a href="<?= $_SERVER['PHP_SELF']; ?>?action=logout" title="Logout"><i class="fa fa-sign-out fa-lg" aria-hidden="true"></i></a></li></li>
+
 					</ul>
 				</div><!-- /.navbar-collapse -->
 				<?php
-			}?>    
+			}?>
 		  </div><!-- /.container-fluid -->
 		</nav>
 		<div class="container top20">
@@ -526,7 +550,7 @@ class Simple_memchached_dashboard{
 	function footer(){
 		?>
 		<script src="//cdnjs.cloudflare.com/ajax/libs/raphael/2.1.0/raphael-min.js"></script>
-		<script src="http://cdn.oesmith.co.uk/morris-0.5.1.min.js"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/morris.js/0.5.1/morris.min.js"></script>
 		<script type="text/javascript" src="//cdn.datatables.net/1.10.2/js/jquery.dataTables.min.js"></script>
 		<script type="text/javascript" src="//cdn.datatables.net/plug-ins/a5734b29083/integration/bootstrap/3/dataTables.bootstrap.js"></script>
 		<script type="text/javascript" src="//cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.2.0/js/bootstrap.min.js"></script>
@@ -536,8 +560,20 @@ class Simple_memchached_dashboard{
 				$("#stored_keys").dataTable({
 					"bFilter":true,
 					"bSort":true,
-					"dom": '<"top"ilf>rt<"bottom"p><"clear">'
+					"dom": '<"top"ilf>rt<"bottom"p><"clear">',
+					"pageLength": 50
 				});
+
+
+				jQuery(".coll_expand_value").on('click', function(){
+					var key = this.id.replace("bk_","");
+					if (jQuery("#div_"+key).hasClass("in") == true) {
+						jQuery("#bk_"+key).text("expand");
+					} else {
+						jQuery("#bk_"+key).text("collapse");
+					}
+				});
+
 			});
 
 			function memcachedSet() {
