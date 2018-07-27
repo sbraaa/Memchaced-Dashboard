@@ -1,5 +1,5 @@
 <?php
-class Simple_memchached_dashboard{
+class Simple_memcached_dashboard{
 	public $memcache = null;
 	public $list     = null;
 	public $status   = null;
@@ -391,10 +391,10 @@ class Simple_memchached_dashboard{
 						<a class="btn btn-info" href="<?= $_SERVER['PHP_SELF'] ?>" onclick="">Refresh</a>
 					</div>
 					<div class="btn-group">
-						<a class="btn btn-primary" href="#" onclick="memcachedSet()">SET</a>
+						<a class="btn btn-primary" href="#" onclick="memcachedSet()">Set</a>
 					</div>
 					<div class="btn-group">
-						<a class="btn btn-danger" href="#" onclick="flush()">FLUSH</a>
+						<a class="btn btn-danger" href="#" onclick="flush()">Flush</a>
 					</div>
 				</div>
 				<div class="table-responsive">
@@ -508,6 +508,15 @@ class Simple_memchached_dashboard{
 			.navbar-default .navbar-nav>li>a { color: #FFF; }
 			.table>thead>tr>th, .table>tbody>tr>th, .table>tfoot>tr>th, .table>thead>tr>td, .table>tbody>tr>td, .table>tfoot>tr>td { border-top: 0; border-bottom: 1px solid #ddd; }
 
+			.navbar-default .navbar-brand:hover, .navbar-default .navbar-brand:focus, .navbar-default .navbar-nav>li>a:hover, .navbar-default .navbar-nav>li>a:focus { color: #f70505; background-color: transparent; }
+
+ 			.dt-body-center { text-align: center; }
+
+			div.top { overflow: hidden; padding: 5px 0; }
+			div.top > div { line-height: 40px; }
+			div.dataTables_info { float:left; padding-top: 0px; }
+			div.dataTables_length { float:left; margin-left: 20px;}
+			div.dataTables_filter { float:right;}
 			</style>
 		</head>
 		<body>
@@ -561,9 +570,13 @@ class Simple_memchached_dashboard{
 					"bFilter":true,
 					"bSort":true,
 					"dom": '<"top"ilf>rt<"bottom"p><"clear">',
-					"pageLength": 50
-				});
+					"pageLength": 50,
+					columnDefs: [
+						{  targets: 2, className: 'dt-body-center' },
+						{  targets: 3, className: 'dt-body-center' }
+					]
 
+				});
 
 				jQuery(".coll_expand_value").on('click', function(){
 					var key = this.id.replace("bk_","");
@@ -617,4 +630,4 @@ class Simple_memchached_dashboard{
 		<?php
 	}
 }//end class
-new Simple_memchached_dashboard();
+new Simple_memcached_dashboard();
