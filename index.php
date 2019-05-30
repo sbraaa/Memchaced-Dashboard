@@ -123,16 +123,19 @@ class Simple_memcached_dashboard{
 
 
 		$allKeys = $this->memcached->getAllKeys();
-		//echo "<pre>"; var_dump($allKeys);
-		$this->memcached->getDelayed($allKeys);
-		$store = $this->memcached->fetchAll();
+		//echo "<pre>"; var_dump($allKeys);  exit();
+
+		$store = array();
+		foreach($allKeys as $k) {
+			$store[] = array('key'=> $k, 'value' => '<div id="div_'.$k.'" style="text-align: center; cursor: pointer; max-height:200px; overflow-y: scroll; word-break: break-word;" onclick="getKeyValue(\''.$k.'\');"><i class="fa fa-question-circle-o" aria-hidden="true"></i></div>');
+		}
+
 		//echo "<pre>"; var_dump($store); exit();
 
 		foreach ($store as $dataKey) {
 			//echo "<pre>"; var_dump($dataKey); exit();
 			$itemKey = $dataKey['key'];
 			$itemValue = $dataKey['value'];
-			$type = gettype($itemValue);
 			$value = $this->maybe_unserialize($itemValue);
 			if (is_object($value)|| is_array($value)){
 				$value = is_object($value)? json_decode(json_encode($value), true): $value;
@@ -141,7 +144,6 @@ class Simple_memcached_dashboard{
 			$list[$itemKey] = array(
 				'key'   => $itemKey,
 				'value' => $value,
-				'type'  => $type
 			);
 		}
 		ksort($list);
@@ -299,10 +301,52 @@ class Simple_memcached_dashboard{
 			    <script type="text/javascript">
 
 				function MbytesToSize(bytes) {
-					if (parseInt(Math.floor(bytes)) > 0) return bytes+' MB';
-					if (parseInt(Math.floor(bytes*10)) >0 || parseInt(Math.floor(bytes*100))  > 0) return bytes+' KB';
-					if (parseInt(Math.floor(bytes*1000)) > 0) return (bytes * 1000)+' Bytes';
+					var b = bytes.replace(",","");
+					if (parseInt(b) > 0 && parseInt(b) < 1000 ) { return b+' MB'; }
+					if (parseInt(b) > 0 && parseInt(b) >= 1000 ) { return ((b / 1000).toFixed(2)) +' GB'; }
+					if (parseInt(b*10) > 0) return (b * 10)+' KB';
+					if (parseInt(b*100) > 0) return (b * 100)+' KB';
+					if (parseInt(b*1000) > 0) return (b * 1000)+' Bytes';
 					return bytes;
+				}
+
+				function getKeyValue(memc_key) {
+
+					// check if value has been loaded
+					if (!$('#div_'+memc_key).attr("value_loaded")) {
+
+						$.ajax({
+							type: "POST",
+							url: "getMemCacheKeyValue.php",
+							async:true,
+							data: { key: memc_key },
+							dataType : 'json',
+							success: function(resp) {
+
+								if (resp.error) {
+									alert('chiave non valida');
+								} else {
+
+									var key_value = resp.value;
+
+									// for object and array -> stringify
+									if (Array.isArray(key_value)
+										|| (key_value !== null && key_value.constructor.name === "Object")
+									) {
+										key_value = JSON.stringify(key_value);
+									}
+
+									$('#div_'+memc_key).html(key_value);
+									$('#div_'+memc_key).attr("value_loaded",true);
+									$('#div_'+memc_key).attr("collapsed",false);
+
+								}
+
+							}
+						});
+					} else {
+
+					}
 				}
 
 			    jQuery(document).ready(function(){
@@ -352,6 +396,13 @@ class Simple_memcached_dashboard{
 		//flush
 		if (isset($_GET['flush'])) {
 			$this->memcached->flush();
+			$keys_list = $this->memcached->getAllKeys();
+			//var_dump($key_list); exit(); //DEBUG
+
+			// touch every key to make memched remove them
+			foreach ($keys_list as $single_key) {
+				$this->memcached->get($single_key);
+			}
 			header("Location: " . $_SERVER['PHP_SELF']);
 		}
 		//set
@@ -403,7 +454,6 @@ class Simple_memcached_dashboard{
 							<tr>
 								<th class="one_t">key</th>
 								<th class="one_h">value</th>
-								<th>type</th>
 								<th>delete</th>
 							</tr>
 						</thead>
@@ -412,15 +462,8 @@ class Simple_memcached_dashboard{
 								<tr>
 									<td class="one_t"><span class="key_scroll"><?= $i['key'] ?></span></td>
 									<td class="one_h"><?php
-										if ($i['type'] != 'array' && $i['type'] != 'object') {
-											echo $i['value'] ;
-										} else {
-											echo '<button data-toggle="collapse" data-target="#div_'.$i['key'].'" id="bk_'.$i['key'].'" class="coll_expand_value">expand</button>
-											<div id="div_'.$i['key'].'" class="collapse">'.$i['value'].'</div>';
-										}
-
+										echo $i['value'] ;
 									?></td>
-									<td><?= $i['type'] ?></td>
 									<td><a class="btn btn-danger" onclick="deleteKey('<?= $i['key'] ?>')" href="#">X</a>
 								</tr>
 							<?php endforeach; ?>
@@ -572,10 +615,10 @@ class Simple_memcached_dashboard{
 					"dom": '<"top"ilf>rt<"bottom"p><"clear">',
 					"pageLength": 50,
 					columnDefs: [
-						{  targets: 2, className: 'dt-body-center' },
-						{  targets: 3, className: 'dt-body-center' }
-					]
-
+						{  targets: 1, className: 'dt-body-center' },
+						{  targets: 2, className: 'dt-body-center' }
+					],
+					"deferRender": true
 				});
 
 				jQuery(".coll_expand_value").on('click', function(){
